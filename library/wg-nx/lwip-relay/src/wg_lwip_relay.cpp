@@ -27,6 +27,11 @@ namespace wgnx {
 
 static constexpr size_t LOG_BUFFER_SIZE = 512;
 
+/* How many bytes one connection may queue while lwIP refuses more. Past this
+ * the relay stops reading from the app's socket and lets TCP backpressure do
+ * the rest, so nothing is ever dropped on the floor. */
+static constexpr size_t kMaxPendingBytes = 256 * 1024;
+
 LwipRelay::LwipRelay(WgTunnel* tunnel, const LwipRelayConfig& config)
     : tunnel_(tunnel)
     , config_(config)
@@ -600,9 +605,18 @@ void LwipRelay::pollTcpConnections() {
             continue;
         }
 
+        /* Retry bytes lwIP refused earlier before asking the app for more. */
+        flushToTunnel(conn.get());
+
         short revents = pollRevents(sock);
 
         if (revents & POLLIN) {
+            /* Backpressure: while lwIP still owes us space, leave the data in
+             * the socket instead of reading and losing it. */
+            if (conn->pendingData.size() >= kMaxPendingBytes) {
+                continue;
+            }
+
             uint8_t buf[2048];
             ssize_t received = recv(sock, buf, sizeof(buf), 0);
 
@@ -618,18 +632,8 @@ void LwipRelay::pollTcpConnections() {
                 continue;
             }
 
-            if (conn->pcb) {
-                err_t err = tcp_write(conn->pcb, buf, (u16_t)received, TCP_WRITE_FLAG_COPY);
-                if (err == ERR_OK) {
-                    tcp_output(conn->pcb);
-                    if (config_.debug_logging) {
-                        debugTcpPackets_++;
-                        debugTcpBytes_ += static_cast<uint64_t>(received);
-                    }
-                } else {
-                    log(LogLevel::Error, "LwipRelay: tcp_write failed: %d", (int)err);
-                }
-            }
+            conn->pendingData.insert(conn->pendingData.end(), buf, buf + received);
+            flushToTunnel(conn.get());
         }
 
         if (revents & (POLLERR | POLLHUP | POLLNVAL)) {
@@ -805,13 +809,97 @@ err_t LwipRelay::onTcpRecv(void* arg, struct tcp_pcb* pcb, struct pbuf* p, err_t
         return ERR_OK;
     }
 
-    ssize_t sent = send(conn->localSock, p->payload, p->len, 0);
-    (void)sent;
+    /* lwIP hands over a pbuf chain, and one chain can carry more than the first
+     * fragment. Forwarding only p->payload/p->len dropped the tail of every
+     * multi-fragment segment while still acking the whole chain, so the player
+     * received a silently truncated stream. */
+    for (struct pbuf* q = p; q != nullptr; q = q->next) {
+        if (!writeAll(conn->localSock, q->payload, q->len)) {
+            if (conn->localSock >= 0) {
+                close(conn->localSock);
+                conn->localSock = -1;
+            }
+            conn->connected = false;
+            break;
+        }
+    }
 
     tcp_recved(pcb, p->tot_len);
     pbuf_free(p);
 
     return ERR_OK;
+}
+
+bool LwipRelay::writeAll(int sock, const void* data, size_t len) {
+    const uint8_t* ptr = static_cast<const uint8_t*>(data);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+
+    while (len > 0) {
+        ssize_t sent = send(sock, ptr, len, 0);
+        if (sent > 0) {
+            ptr += sent;
+            len -= static_cast<size_t>(sent);
+            continue;
+        }
+        if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            /* The reader is slower than the tunnel: wait instead of dropping. */
+            struct pollfd pfd{sock, POLLOUT, 0};
+            if (poll(&pfd, 1, 50) > 0)
+                continue;
+            if (std::chrono::steady_clock::now() < deadline)
+                continue;
+        }
+        return false;
+    }
+    return true;
+}
+
+bool LwipRelay::flushToTunnel(TcpConnection* conn) {
+    if (conn->pendingData.empty())
+        return true;
+
+    if (!conn->pcb) {
+        conn->pendingData.clear();
+        return false;
+    }
+
+    size_t offset = 0;
+    bool stalled = false;
+    while (offset < conn->pendingData.size()) {
+        size_t chunk = conn->pendingData.size() - offset;
+        if (chunk > 2048)
+            chunk = 2048;
+
+        err_t err = tcp_write(conn->pcb, conn->pendingData.data() + offset,
+                             static_cast<u16_t>(chunk), TCP_WRITE_FLAG_COPY);
+        if (err == ERR_OK) {
+            offset += chunk;
+            if (config_.debug_logging) {
+                debugTcpPackets_++;
+                debugTcpBytes_ += chunk;
+            }
+            continue;
+        }
+
+        if (err == ERR_MEM) {
+            /* lwIP ran out of space. Keep the rest queued and retry from the
+             * loop: dropping it would hand a gap to the remote side. */
+            stalled = true;
+            break;
+        }
+
+        log(LogLevel::Error, "LwipRelay: tcp_write failed: %d", (int)err);
+        conn->pendingData.clear();
+        return false;
+    }
+
+    if (offset > 0) {
+        conn->pendingData.erase(conn->pendingData.begin(),
+                                conn->pendingData.begin() + offset);
+        tcp_output(conn->pcb);
+    }
+
+    return !stalled && conn->pendingData.empty();
 }
 
 err_t LwipRelay::onTcpSent(void* arg, struct tcp_pcb* pcb, u16_t len) {

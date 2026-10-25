@@ -90,6 +90,10 @@ private:
     void pollTcpListeners();
     void pollUdpSockets();
     void pollTcpConnections();
+    /* Pushes buffered local bytes into lwIP. Returns true when nothing is left. */
+    bool flushToTunnel(TcpConnection* conn);
+    /* Writes the whole chain to the local socket. Returns false on failure. */
+    static bool writeAll(int sock, const void* data, size_t len);
     void signalWake();
 
     // Closes the wake pair and sets wakeDead_. Without it the loop wakes up

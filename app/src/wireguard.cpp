@@ -396,7 +396,7 @@ bool Relay::start(const std::string& configPath) {
         return false;
     }
 
-    wglog("step 7: startTcpRelay (FIX: relay dials the target port and survives EBADF)");
+    wglog("step 7: startTcpRelay (FIX: target port, EBADF survival, lossless stream)");
     uint16_t bound = relay->startTcpRelay(targetPort_, localPort_);
     if (bound != localPort_) {
         status_ = "WireGuard: could not bind port " + std::to_string(localPort_);
