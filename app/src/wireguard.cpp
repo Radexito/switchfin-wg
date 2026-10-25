@@ -27,24 +27,20 @@ namespace wgrelay {
 
 namespace {
 
-// Logs to the console, to a file on the SD card and over UDP to the PC.
-// The UDP copy keeps the last step visible even when the app crashes.
+// Logs a line to the SD card. Uses raw file calls instead of a cached FILE*:
+// the tunnel, the relay and the UI all log from different threads, and the
+// lazy `static FILE*` this used to keep was initialised without any lock. Two
+// threads could enter it at once, which is exactly the kind of race that ends
+// up corrupting the heap somewhere else entirely.
 void wglog(const std::string& msg) {
-    // No brls::Logger: log to the file only. Calling the UI library from a
-    // worker thread used to kill the process.
-    static FILE* f = nullptr;
-    static bool tried = false;
-    if (!tried) {
-        tried = true;
-        f = std::fopen("sdmc:/switch/Switchfin/wg-log.txt", "a");
-        if (!f)
-            f = std::fopen("/switch/Switchfin/wg-log.txt", "a");
-        if (f)
-            std::setvbuf(f, nullptr, _IONBF, 0);
-    }
-    if (f) {
-        std::fprintf(f, "%s\n", msg.c_str());
-        std::fflush(f);
+    int fd = ::open("sdmc:/switch/Switchfin/wg-log.txt",
+                    O_WRONLY | O_APPEND | O_CREAT, 0666);
+    if (fd < 0)
+        fd = ::open("/switch/Switchfin/wg-log.txt", O_WRONLY | O_APPEND | O_CREAT, 0666);
+    if (fd >= 0) {
+        ::write(fd, msg.c_str(), msg.size());
+        ::write(fd, "\n", 1);
+        ::close(fd);
     }
 }
 

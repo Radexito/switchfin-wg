@@ -15,10 +15,10 @@
 #define MEM_SIZE                        (32 * 1024)
 #define MEMP_NUM_PBUF                   32
 #define MEMP_NUM_UDP_PCB                8
-#define MEMP_NUM_TCP_PCB                8
+#define MEMP_NUM_TCP_PCB                16
 #define MEMP_NUM_TCP_PCB_LISTEN         4
 #define MEMP_NUM_TCP_SEG                32
-#define PBUF_POOL_SIZE                  32
+#define PBUF_POOL_SIZE                  40
 #define PBUF_POOL_BUFSIZE               1600
 
 #define LWIP_SUPPORT_CUSTOM_PBUF        1
@@ -51,5 +51,12 @@
 
 #define LWIP_STATS                      0
 #define LWIP_DEBUG                      0
+
+/* Heap sentinels: the process kept dying inside free() in code that has
+ * nothing to do with the tunnel, which points at a stray write somewhere.
+ * These make lwIP scream at the exact block instead of much later. */
+#define MEM_SANITY_CHECK                1
+#define MEM_OVERFLOW_CHECK              2
+#define MEMP_OVERFLOW_CHECK             2
 
 #endif

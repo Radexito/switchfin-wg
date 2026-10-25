@@ -16,6 +16,7 @@
 #include <climits>
 #include <chrono>
 #include <thread>
+#include <malloc.h>
 
 extern "C" {
 #include "lwip/init.h"
@@ -210,6 +211,7 @@ void LwipRelay::stop() {
             pair.second->localSock = -1;
         }
         if (pair.second->pcb) {
+            tcp_arg(pair.second->pcb, nullptr);
             tcp_abort(pair.second->pcb);
         }
     }
@@ -401,6 +403,7 @@ void LwipRelay::runLoop() {
 
     log(LogLevel::Info, "LwipRelay: loop started");
     auto lastTrafficLog = std::chrono::steady_clock::now();
+    auto lastHeapLog = lastTrafficLog;
 
     while (running_) {
         pollFds_.clear();
@@ -495,6 +498,20 @@ void LwipRelay::runLoop() {
         }
 
         auto now = std::chrono::steady_clock::now();
+        if (now - lastHeapLog >= std::chrono::seconds(20)) {
+            lastHeapLog = now;
+            /* Free-heap and connection counters: enough to tell a leak from a
+             * stray write when the process dies somewhere unrelated. */
+            struct mallinfo mi = mallinfo();
+            size_t conns = 0;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                conns = tcpConnections_.size();
+            }
+            log(LogLevel::Info,
+                "LwipRelay: heap free=%d uord=%d, tcp conns=%u",
+                (int)mi.fordblks, (int)mi.uordblks, (unsigned)conns);
+        }
         if (config_.debug_logging &&
             now - lastTrafficLog >= std::chrono::seconds(5)) {
             flushDebugTraffic();
@@ -624,7 +641,12 @@ void LwipRelay::pollTcpConnections() {
                 if (received == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
                     log(LogLevel::Info, "LwipRelay: local socket closed");
                     if (conn->pcb) {
-                        tcp_close(conn->pcb);
+                        /* The app closed its end. Abort rather than tcp_close:
+                         * a graceful close keeps the pcb alive, and lwIP would
+                         * then run our callbacks with the argument pointing at
+                         * a TcpConnection that is already destroyed. */
+                        tcp_arg(conn->pcb, nullptr);
+                        tcp_abort(conn->pcb);
                         conn->pcb = nullptr;
                     }
                     toRemove.push_back(sock);
@@ -649,6 +671,7 @@ void LwipRelay::pollTcpConnections() {
                 it->second->localSock = -1;
             }
             if (it->second->pcb) {
+                tcp_arg(it->second->pcb, nullptr);
                 tcp_abort(it->second->pcb);
             }
             tcpConnections_.erase(it);
