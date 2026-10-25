@@ -58,6 +58,16 @@ private:
     BRLS_BIND(brls::BooleanCell, btnOverClock, "setting/overclock");
     BRLS_BIND(brls::BooleanCell, btnDebug, "setting/debug");
     BRLS_BIND(brls::BooleanCell, btnSync, "setting/sync");
+    // --- WireGuard ---
+    BRLS_BIND(brls::BooleanCell, btnWgEnabled, "setting/wireguard/enabled");
+    BRLS_BIND(brls::InputCell, inputWgEndpoint, "setting/wireguard/endpoint");
+    BRLS_BIND(brls::InputCell, inputWgPrivateKey, "setting/wireguard/privatekey");
+    BRLS_BIND(brls::InputCell, inputWgPublicKey, "setting/wireguard/publickey");
+    BRLS_BIND(brls::InputCell, inputWgAddress, "setting/wireguard/address");
+    BRLS_BIND(brls::InputCell, inputWgTarget, "setting/wireguard/target");
+    BRLS_BIND(brls::InputNumericCell, inputWgTargetPort, "setting/wireguard/targetport");
+    BRLS_BIND(brls::InputNumericCell, inputWgLocalPort, "setting/wireguard/localport");
+    BRLS_BIND(brls::InputNumericCell, inputWgMtu, "setting/wireguard/mtu");
     BRLS_BIND(brls::SelectorCell, inputThreads, "setting/network/threads");
     BRLS_BIND(brls::SelectorCell, selectorTimeout, "setting/network/timeout");
     BRLS_BIND(brls::BooleanCell, btnTls, "setting/network/tls");

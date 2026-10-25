@@ -1,0 +1,77 @@
+/* SPDX-License-Identifier: LGPL-3.0-or-later
+ * Copyright (c) 2026 xlanor
+ * This file is part of wg-nx. See COPYING and COPYING.LESSER.
+ */
+
+#ifndef WIREGUARD_H
+#define WIREGUARD_H
+
+#include <stdint.h>
+#include <stddef.h>
+#include <netinet/in.h>
+
+#define WG_KEY_LEN 32
+#define WG_MAX_ENDPOINT 256
+#define WG_DEFAULT_MTU 1420
+#define WG_MIN_MTU 576
+#define WG_MAX_PACKET_SIZE 2048
+/* Transport header (16 bytes) and authentication tag (16 bytes). */
+#define WG_MAX_MTU (WG_MAX_PACKET_SIZE - 32)
+
+typedef enum {
+    WG_OK = 0,
+    WG_ERR_INVALID_CONFIG = -1,
+    WG_ERR_SOCKET = -2,
+    WG_ERR_HANDSHAKE = -3,
+    WG_ERR_TIMEOUT = -4,
+    WG_ERR_DECRYPT = -5,
+    WG_ERR_NOT_CONNECTED = -6,
+    WG_ERR_BUFFER_TOO_SMALL = -7,
+    WG_ERR_THREAD = -8,
+    WG_ERR_ALREADY_RUNNING = -9,
+} WgError;
+
+typedef struct {
+    uint8_t private_key[WG_KEY_LEN];
+    struct in_addr tunnel_ip;
+    uint8_t peer_public_key[WG_KEY_LEN];
+    char endpoint_host[WG_MAX_ENDPOINT];
+    uint16_t endpoint_port;
+    uint16_t keepalive_interval;
+    uint16_t mtu; /* Inner IP MTU; zero uses WG_DEFAULT_MTU. */
+    uint8_t preshared_key[WG_KEY_LEN];
+    int has_preshared_key;
+} WgConfig;
+
+typedef struct WgTunnel WgTunnel;
+typedef struct WgRecvSlot WgRecvSlot;
+
+/* Recv callback.
+ *   `data` points inside `slot` and is valid until the slot is released.
+ *   Return 0 to auto-release the slot on return (synchronous consumers).
+ *   Return non-zero to take ownership: caller MUST later call
+ *   wg_recv_slot_release(tun, slot) exactly once (zero-copy async consumers). */
+typedef int (*WgRecvCallback)(void* user, WgRecvSlot* slot, const void* data, size_t len);
+
+WgTunnel* wg_init(const WgConfig* config);
+void wg_set_recv_callback(WgTunnel* tun, WgRecvCallback cb, void* user);
+void wg_recv_slot_release(WgTunnel* tun, WgRecvSlot* slot);
+int wg_connect(WgTunnel* tun);
+int wg_start(WgTunnel* tun);
+void wg_stop(WgTunnel* tun);
+int wg_send(WgTunnel* tun, const void* data, size_t len);
+int wg_recv(WgTunnel* tun, void* buf, size_t len, int timeout_ms);
+int wg_get_ip(WgTunnel* tun, struct in_addr* addr);
+uint16_t wg_get_mtu(WgTunnel* tun);
+void wg_close(WgTunnel* tun);
+
+int wg_key_from_base64(uint8_t key[WG_KEY_LEN], const char* base64);
+int wg_key_to_base64(char* base64, size_t len, const uint8_t key[WG_KEY_LEN]);
+void wg_generate_keypair(uint8_t private_key[WG_KEY_LEN], uint8_t public_key[WG_KEY_LEN]);
+
+int wg_rekey(WgTunnel* tun);
+uint32_t wg_get_session_index(WgTunnel* tun);
+
+void wg_set_log_callback(void (*func)(const char* msg));
+
+#endif

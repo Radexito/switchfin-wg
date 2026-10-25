@@ -124,6 +124,37 @@
             <brls:Header
                 width="auto"
                 height="auto"
+                title="WireGuard"
+                marginBottom="0px" />
+            <brls:Box
+                width="100%"
+                height="auto"
+                axis="column"
+                marginBottom="30px">
+                <brls:BooleanCell
+                    id="setting/wireguard/enabled" />
+                <brls:InputCell
+                    id="setting/wireguard/endpoint" />
+                <brls:InputCell
+                    id="setting/wireguard/privatekey"
+                    type="password" />
+                <brls:InputCell
+                    id="setting/wireguard/publickey" />
+                <brls:InputCell
+                    id="setting/wireguard/address" />
+                <brls:InputCell
+                    id="setting/wireguard/target" />
+                <brls:InputNumericCell
+                    id="setting/wireguard/targetport" />
+                <brls:InputNumericCell
+                    id="setting/wireguard/localport" />
+                <brls:InputNumericCell
+                    id="setting/wireguard/mtu" />
+            </brls:Box>
+
+            <brls:Header
+                width="auto"
+                height="auto"
                 title="@i18n/main/tabs/downloads"
                 marginBottom="0px" />
             <brls:Box

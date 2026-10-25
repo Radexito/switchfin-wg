@@ -1,7 +1,10 @@
 #include <borealis.hpp>
+#include <cstdio>
+#include <thread>
 
 #include "utils/config.hpp"
 #include "utils/download.hpp"
+#include "utils/wireguard.hpp"
 #include "utils/thread.hpp"
 #include "api/analytics.hpp"
 
@@ -75,6 +78,37 @@ int main(int argc, char* argv[]) {
     conf.initThemes();
     DownloadManager::instance().init();
 
+    // WireGuard: when /switch/Switchfin/wireguard.conf exists, bring up the
+    // tunnel and the local relay. The handshake blocks, so it cannot run on the
+    // main thread.
+#ifdef __SWITCH__
+    {
+        const char* wgConf = "sdmc:/switch/Switchfin/wireguard.conf";
+        std::string path = wgConf;
+        FILE* probe = std::fopen(wgConf, "r");
+        if (!probe) {
+            probe = std::fopen("/switch/Switchfin/wireguard.conf", "r");
+            path = "/switch/Switchfin/wireguard.conf";
+        }
+        if (probe) {
+            std::fclose(probe);
+            if (FILE* lf = std::fopen("sdmc:/switch/Switchfin/wg-log.txt", "w")) {
+                std::fprintf(lf, "Switchfin start, found %s\n", path.c_str());
+                std::fclose(lf);
+            }
+            wgrelay::installCrashHandlers();
+            wgrelay::rawlog("0: synchronous start, no worker thread");
+            try {
+                wgrelay::Relay::instance().start(path);
+            } catch (const std::exception& e) {
+                wgrelay::logLine(std::string("!! EXCEPTION: ") + e.what());
+            } catch (...) {
+                wgrelay::logLine("!! EXCEPTION: unknown type");
+            }
+        }
+    }
+#endif
+
     // Return directly to the desktop when closing the application (only for NX)
     brls::Application::getPlatform()->exitToHomeMode(true);
 
@@ -132,6 +166,14 @@ int main(int argc, char* argv[]) {
 
     // Run the app
     while (brls::Application::mainLoop());
+
+    try {
+        wgrelay::Relay::instance().stop();
+    } catch (const std::exception& e) {
+        wgrelay::rawlog("!! WYJATEK przy zamykaniu");
+    } catch (...) {
+        wgrelay::rawlog("!! WYJATEK nieznany przy zamykaniu");
+    }
 
     ThreadPool::instance().stop();
 

@@ -1,19 +1,29 @@
-# Switchfin
+# Switchfin WG
 
 <img src="scripts/switchfin.svg" alt="icon" height="128" width="128" align="left">
 
-Switchfin is third-party PC player for Jellyfin that provides a native user interface to browse and play movies and series.
+**switchfin-wg** is a fork of [Switchfin](https://github.com/dragonflylee/switchfin) with a
+**WireGuard implementation built in**: the Nintendo Switch can reach a Jellyfin server that is
+only reachable through a VPN, with no sysmodule and no system-wide network changes.
 <br>
 
-[![build](https://github.com/dragonflylee/switchfin/actions/workflows/build.yaml/badge.svg)](https://github.com/dragonflylee/switchfin/actions/workflows/build.yaml)
-[![NS](https://img.shields.io/badge/-Nintendo%20Switch-e4000f?style=flat&logo=Nintendo%20Switch)](https://hb-app.store/switch/Switchfin)
-[![PSVita](https://img.shields.io/badge/-PSVita-003791?style=flat&logo=PlayStation)](https://www.rinnegatamante.eu/vitadb/#/info/1258)
-[![PS4](https://img.shields.io/badge/-PS4-003791?style=flat&logo=PlayStation)](https://pkg-zone.com/details/SFIN00000)
-[![Flathub](https://img.shields.io/flathub/v/fun.dragonfly.switchfin)](https://flathub.org/apps/fun.dragonfly.switchfin)
-[![download](https://img.shields.io/github/downloads/dragonflylee/switchfin/total?label=Downloads)](https://github.com/dragonflylee/switchfin/releases/latest)
-[![nightly](https://img.shields.io/badge/nightly-build-green)](https://nightly.link/dragonflylee/switchfin/workflows/build.yaml/dev)
+Switchfin itself is a third-party PC player for Jellyfin that provides a native user interface to
+browse and play movies and series.
+
+> **WireGuard** runs in-process. Configure `/switch/Switchfin/wireguard.conf` (or edit it straight
+> from the app's settings screen) and connect Switchfin to `http://127.0.0.1:18096`.
+> Config format, MTU guidance and troubleshooting: [WIREGUARD.md](WIREGUARD.md).
+
+
+[![build](https://github.com/Radexito/switchfin-wg/actions/workflows/build.yaml/badge.svg)](https://github.com/Radexito/switchfin-wg/actions/workflows/build.yaml)
+[![download](https://img.shields.io/github/downloads/Radexito/switchfin-wg/total?label=Downloads)](https://github.com/Radexito/switchfin-wg/releases/latest)
+[![latest release](https://img.shields.io/github/v/release/Radexito/switchfin-wg?label=release)](https://github.com/Radexito/switchfin-wg/releases/latest)
+[![nightly](https://img.shields.io/badge/nightly-build-green)](https://nightly.link/Radexito/switchfin-wg/workflows/build.yaml/dev)
 
 **This project is in its early stages so expect bugs.**
+
+Fork maintained at [Radexito/switchfin-wg](https://github.com/Radexito/switchfin-wg).
+Upstream Switchfin lives at [dragonflylee/switchfin](https://github.com/dragonflylee/switchfin).
 
 ## Screenshots
 
@@ -66,6 +76,8 @@ Switchfin is third-party PC player for Jellyfin that provides a native user inte
 - Manage multiple remote sources with add/edit/remove
 
 ### Additional Features
+- **WireGuard tunnel** — in-process VPN so Jellyfin can stay off the internet; on/off, keys,
+  endpoint, ports and MTU are editable in Settings, see [WIREGUARD.md](WIREGUARD.md)
 - **Danmaku (弹幕)** — integration with [jellyfin-plugin-danmu](https://github.com/cxfksword/jellyfin-plugin-danmu)
 - **Download** — save media for offline viewing, with series batch download
 - **MirrorPlay** — remote playback control via WebSocket (browse on phone, play on big screen)
@@ -167,7 +179,7 @@ sudo xattr -rd com.apple.quarantine /Applications/Switchfin.app
 ## Development
 
 ```shell
-git clone https://github.com/dragonflylee/switchfin.git --recurse-submodules --shallow-submodules
+git clone https://github.com/Radexito/switchfin-wg.git --recurse-submodules --shallow-submodules
 ```
 
 ### Nintendo Switch
@@ -200,6 +212,17 @@ cmake --build build_mingw
 ```
 
 ## Acknowledgements
+
+This fork builds on other people's work, with thanks:
+
+- **Switchfin** itself, by [@dragonflylee](https://github.com/dragonflylee) and contributors —
+  [dragonflylee/switchfin](https://github.com/dragonflylee/switchfin). This repository is a fork of
+  it; everything that is not the WireGuard tunnel comes from there.
+- **wg-nx**, the userland WireGuard implementation by [@xlanor](https://github.com/xlanor) —
+  [xlanor/wg-nx](https://github.com/xlanor/wg-nx) (LGPL-3.0). Vendored under `library/wg-nx` with
+  small relay fixes, see [WIREGUARD.md](WIREGUARD.md).
+
+Upstream and dependency credits, unchanged:
 
 - **@xfangfang** for [wiliwili](https://github.com/xfangfang/wiliwili)
 - @devkitpro and switchbrew for [libnx](https://github.com/switchbrew/libnx)

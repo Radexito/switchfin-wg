@@ -20,6 +20,8 @@
 #include "activity/hint_activity.hpp"
 #include "utils/config.hpp"
 #include "utils/thread.hpp"
+#include "utils/wireguard.hpp"
+#include <memory>
 #include <curl/curl.h>
 #include "view/mpv_core.hpp"
 #include "view/selector_cell.hpp"
@@ -452,6 +454,70 @@ void SettingTab::onCreate() {
         brls::Application::enableDebuggingView(value);
         MPVCore::instance().restart();
     });
+
+// --- WireGuard (Switch only) ---------------------------------------------
+#ifdef __SWITCH__
+    // Values live in the same file the tunnel reads
+    // (/switch/Switchfin/wireguard.conf), so there is no second source of truth.
+    {
+        auto wgc = std::make_shared<wgrelay::Settings>(wgrelay::readSettings(wgrelay::configPath()));
+        auto save = [wgc]() { wgrelay::writeSettings(wgrelay::configPath(), *wgc); };
+
+        btnWgEnabled->init("Enable WireGuard tunnel", wgc->enabled, [wgc, save](bool value) {
+            wgc->enabled = value;
+            save();
+            if (value) {
+                // Bringing the tunnel up performs a synchronous handshake, and
+                // starting it from a worker thread used to kill the process on
+                // Horizon, so it takes effect on the next launch.
+                brls::Application::notify("WireGuard: enabled, restart Switchfin to connect");
+            } else {
+                wgrelay::Relay::instance().stop();
+                brls::Application::notify("WireGuard: disabled");
+            }
+        });
+
+        inputWgEndpoint->init("Endpoint (host:port)", wgc->endpoint,
+            [wgc, save](std::string v) { wgc->endpoint = v; save(); }, "vpn.example.com:51820");
+        inputWgPrivateKey->init("Private key", wgc->privateKey,
+            [wgc, save](std::string v) { wgc->privateKey = v; save(); });
+        inputWgPublicKey->init("Server public key", wgc->publicKey,
+            [wgc, save](std::string v) { wgc->publicKey = v; save(); });
+        inputWgAddress->init("Tunnel address", wgc->address,
+            [wgc, save](std::string v) { wgc->address = v; save(); }, "10.10.0.2");
+        inputWgTarget->init("Jellyfin address", wgc->target,
+            [wgc, save](std::string v) { wgc->target = v; save(); }, "192.168.1.5");
+        inputWgTargetPort->init("Jellyfin port", (long)wgc->targetPort, [wgc, save](long v) {
+            if (v <= 0 || v > 65535) return;
+            wgc->targetPort = (unsigned)v;
+            save();
+        }, "8096", 5);
+        inputWgLocalPort->init("Local relay port", (long)wgc->localPort, [wgc, save](long v) {
+            if (v <= 0 || v > 65535) return;
+            wgc->localPort = (unsigned)v;
+            save();
+        }, "18096", 5);
+        inputWgMtu->init("Tunnel MTU", (long)wgc->mtu, [wgc, save](long v) {
+            if (v < 1000 || v > 1400) {
+                brls::Application::notify("MTU must be between 1000 and 1400");
+                return;
+            }
+            wgc->mtu = (unsigned)v;
+            save();
+        }, "1200 (1200 is safe on mobile networks)", 4);
+    }
+#else
+    // The tunnel exists only in the Switch build, so keep its cells hidden.
+    btnWgEnabled->setVisibility(brls::Visibility::GONE);
+    inputWgEndpoint->setVisibility(brls::Visibility::GONE);
+    inputWgPrivateKey->setVisibility(brls::Visibility::GONE);
+    inputWgPublicKey->setVisibility(brls::Visibility::GONE);
+    inputWgAddress->setVisibility(brls::Visibility::GONE);
+    inputWgTarget->setVisibility(brls::Visibility::GONE);
+    inputWgTargetPort->setVisibility(brls::Visibility::GONE);
+    inputWgLocalPort->setVisibility(brls::Visibility::GONE);
+    inputWgMtu->setVisibility(brls::Visibility::GONE);
+#endif
 
     btnReleaseChecker->title->setText(
         fmt::format("{} ({}: {})", "main/setting/others/release"_i18n, "hints/current"_i18n, AppVersion::getVersion()));

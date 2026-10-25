@@ -13,6 +13,17 @@ websocket::websocket(const std::string& url) {
     this->easy = curl_easy_init();
     curl_easy_setopt(this->easy, CURLOPT_URL, url.c_str());
 
+    // Jellyfin rejects /socket when the token is only in the query string
+    // (it answers "Token is required" with 403) and accepts it in the
+    // Authorization header. Without this the WebSocket never upgrades and the
+    // app shows an error when opening the server.
+    {
+        auto& conf = AppConfig::instance();
+        std::string auth = conf.getAuth(conf.getToken());
+        this->hdr = curl_slist_append((struct curl_slist*)this->hdr, auth.c_str());
+        curl_easy_setopt(this->easy, CURLOPT_HTTPHEADER, (struct curl_slist*)this->hdr);
+    }
+
     // enable all supported built-in compressions
     curl_easy_setopt(this->easy, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(this->easy, CURLOPT_VERBOSE, 0L);
@@ -66,6 +77,10 @@ websocket::~websocket() {
         if (this->easy != nullptr) {
             curl_easy_cleanup(this->easy);
             this->easy = nullptr;
+        }
+        if (this->hdr != nullptr) {
+            curl_slist_free_all((struct curl_slist*)this->hdr);
+            this->hdr = nullptr;
         }
     }
 #endif

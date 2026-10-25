@@ -57,7 +57,7 @@ set(VERSION_MAJOR "0")
 set(VERSION_MINOR "9")
 set(VERSION_ALTER "4")
 set(PROJECT_TITLEID "010ff000ffff0003")
-set(PROJECT_AUTHOR "dragonflylee")
+set(PROJECT_AUTHOR "Radexito, based on switchfin by dragonflylee")
 set(PACKAGE_NAME "fun.dragonfly.switchfin")
 set(VITA_TITLEID "SWITCHFIN")
 set(PSN_TITLE_ID "SFIN00000")
@@ -74,6 +74,12 @@ endif ()
 
 # setting src and include
 file(GLOB_RECURSE MAIN_SRC "${PROJECT_SOURCE_DIR}/app/src/*.cpp")
+if (NOT PLATFORM_SWITCH)
+    # The WireGuard tunnel is Switch-only: it needs libnx sockets and the wg-nx
+    # userland stack, so the desktop/Vita/PS4 builds must not see it.
+    list(REMOVE_ITEM MAIN_SRC ${PROJECT_SOURCE_DIR}/app/src/wireguard.cpp)
+endif ()
+
 if (PLATFORM_SWITCH)
     # System service initialization functions required for libnx
     list(APPEND MAIN_SRC ${BOREALIS_LIBRARY}/lib/platforms/switch/switch_wrapper.c)
@@ -211,6 +217,50 @@ set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 17)
 target_include_directories(${PROJECT_NAME} PRIVATE app/include ${APP_PLATFORM_INCLUDE})
 target_compile_options(${PROJECT_NAME} PRIVATE -ffunction-sections -fdata-sections -Wunused-variable ${APP_PLATFORM_OPTION})
 target_link_libraries(${PROJECT_NAME} PRIVATE borealis lunasvg ${APP_PLATFORM_LIB})
+
+# --- WireGuard (wg-nx) ---------------------------------------------------
+# Userland tunnel plus lwIP relay. The relay listens on 127.0.0.1:<LocalPort>
+# and tunnels connections to the Jellyfin server on the home network, so the
+# rest of the app only needs http://127.0.0.1:18096 as the server address.
+if (PLATFORM_SWITCH)
+set(WGNX_DIR ${PROJECT_SOURCE_DIR}/library/wg-nx)
+set(WGNX_LWIP_DIR ${WGNX_DIR}/library/lwip)
+
+file(GLOB WGNX_CORE_SRC ${WGNX_DIR}/src/*.c ${WGNX_DIR}/library/crypto/*.c)
+set(WGNX_RELAY_SRC
+    ${WGNX_DIR}/lwip-relay/src/wg_lwip_relay.cpp
+    ${WGNX_DIR}/lwip-relay/src/wg_netif.c
+    ${WGNX_DIR}/lwip-relay/src/sys_arch.c)
+set(WGNX_LWIP_SRC
+    ${WGNX_LWIP_DIR}/src/core/init.c
+    ${WGNX_LWIP_DIR}/src/core/def.c
+    ${WGNX_LWIP_DIR}/src/core/inet_chksum.c
+    ${WGNX_LWIP_DIR}/src/core/ip.c
+    ${WGNX_LWIP_DIR}/src/core/mem.c
+    ${WGNX_LWIP_DIR}/src/core/memp.c
+    ${WGNX_LWIP_DIR}/src/core/netif.c
+    ${WGNX_LWIP_DIR}/src/core/pbuf.c
+    ${WGNX_LWIP_DIR}/src/core/tcp.c
+    ${WGNX_LWIP_DIR}/src/core/tcp_in.c
+    ${WGNX_LWIP_DIR}/src/core/tcp_out.c
+    ${WGNX_LWIP_DIR}/src/core/timeouts.c
+    ${WGNX_LWIP_DIR}/src/core/udp.c
+    ${WGNX_LWIP_DIR}/src/core/ipv4/ip4.c
+    ${WGNX_LWIP_DIR}/src/core/ipv4/ip4_addr.c
+    ${WGNX_LWIP_DIR}/src/core/ipv4/ip4_frag.c
+    ${WGNX_LWIP_DIR}/src/core/ipv4/icmp.c)
+
+target_sources(${PROJECT_NAME} PRIVATE ${WGNX_CORE_SRC} ${WGNX_RELAY_SRC} ${WGNX_LWIP_SRC})
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${WGNX_DIR}/include
+    ${WGNX_DIR}/src
+    ${WGNX_DIR}/library/crypto
+    ${WGNX_DIR}/lwip-relay/include
+    ${WGNX_LWIP_DIR}/src/include)
+set_source_files_properties(${WGNX_CORE_SRC} PROPERTIES
+    COMPILE_OPTIONS "-march=armv8-a+crc+crypto;-mtune=cortex-a57;-mtp=soft")
+# --- end WireGuard -------------------------------------------------------
+endif ()
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     APP_VERSION=${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_ALTER}
     APP_BUILD=${VERSION_BUILD}
@@ -273,7 +323,7 @@ elseif (PLATFORM_SWITCH)
         gen_dksh("${PROJECT_RESOURCES}/shaders")
     endif ()
     add_custom_target(${PROJECT_NAME}.nro DEPENDS ${PROJECT_NAME}
-        COMMAND ${NX_NACPTOOL_EXE} --create "${PROJECT_NAME}" "${PROJECT_AUTHOR}" "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_ALTER}" ${PROJECT_NAME}.nacp
+        COMMAND ${NX_NACPTOOL_EXE} --create "Switchfin VPN" "${PROJECT_AUTHOR}" "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_ALTER}" ${PROJECT_NAME}.nacp
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_RESOURCES} ${CMAKE_BINARY_DIR}/resources
         COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_BINARY_DIR}/resources/font/keymap*.ttf ${CMAKE_BINARY_DIR}/resources/font/*_fallback.ttf ${CMAKE_BINARY_DIR}/resources/font/switch_font.ttf
         COMMAND ${NX_ELF2NRO_EXE} ${PROJECT_NAME}.elf ${PROJECT_NAME}.nro --icon=${PROJECT_ICON} --nacp=${PROJECT_NAME}.nacp --romfsdir=${CMAKE_BINARY_DIR}/resources

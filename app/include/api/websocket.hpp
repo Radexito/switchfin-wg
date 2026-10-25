@@ -35,4 +35,6 @@ private:
     std::atomic_bool isStop{false};
     std::mutex easyMutex;
     void *easy = nullptr;
+    // curl_slist z naglowkiem Authorization dla polaczenia /socket.
+    void *hdr = nullptr;
 };
